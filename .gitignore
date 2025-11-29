@@ -47,6 +47,8 @@ venv.bak/
 ehthumbs.db
 Thumbs.db
 
+ct_artifact/swinir_ct_artifact/options/*
+
 # Jupyter Notebook
 .ipynb_checkpoints
 

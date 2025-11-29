@@ -20,10 +20,10 @@
       "dataroot_H": "trainsets/CT_Artifact/train/H",
       "dataroot_L": "trainsets/CT_Artifact/train/L",
 
-      "H_size": 64,
+      "H_size": 96,
       "dataloader_shuffle": true,
       "dataloader_num_workers": 8,
-      "dataloader_batch_size": 8      
+      "dataloader_batch_size": 4      
     },
     "test": {
       "name": "test_dataset",
