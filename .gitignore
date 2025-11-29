@@ -1,1 +1,100 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# PyTorch
+*.pth
+*.pt
+checkpoints/
+runs/
+wandb/
+
+# Training data and results
 trainsets/*
+testsets/*
+results/
+logs/
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Model outputs
+model_zoo/*.pth
+model_zoo/*.pt
+
+# Matlab
+*.mex*
+*.asv
+
+# Large data files
+*.mat
+*.h5
+*.hdf5
+*.lmdb
+
+# Compiled CUDA files
+*.cuo
+*.cubin
+
+# Test images and results
+test_imgs/*
+matlab/*_results/
+
+# Documentation build
+docs/_build/
+
+# Backup files
+*.bak
+*.backup
