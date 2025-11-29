@@ -100,7 +100,7 @@ def main(json_path: str = 'options/train_msrresnet_psnr.json') -> None:
         logger_name = 'train'
         utils_logger.logger_info(logger_name, os.path.join(opt['path']['log'], logger_name+'.log'))
         logger = logging.getLogger(logger_name)
-        logger.info(option.dict2str(opt))
+        # logger.info(option.dict2str(opt))  # 注释掉配置信息打印
 
     # ----------------------------------------
     # seed
