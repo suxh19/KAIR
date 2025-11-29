@@ -62,7 +62,7 @@ class ModelBase():
             scheduler.step()
 
     def current_learning_rate(self):
-        return self.schedulers[0].get_lr()[0]
+        return self.schedulers[0].get_last_lr()[0]
 
     def requires_grad(self, model, flag=True):
         for p in model.parameters():
@@ -120,7 +120,7 @@ class ModelBase():
         msg = '\n'
         msg += 'Networks name: {}'.format(network.__class__.__name__) + '\n'
         msg += 'Params number: {}'.format(sum(map(lambda x: x.numel(), network.parameters()))) + '\n'
-        msg += 'Net structure:\n{}'.format(str(network)) + '\n'
+        # msg += 'Net structure:\n{}'.format(str(network)) + '\n'  # 注释掉详细结构打印
         return msg
 
     # ----------------------------------------
@@ -187,12 +187,12 @@ class ModelBase():
     # load the state_dict of the optimizer
     # ----------------------------------------
     def load_optimizer(self, load_path, optimizer):
-        optimizer.load_state_dict(torch.load(load_path, map_location=lambda storage, loc: storage.cuda(torch.cuda.current_device())))
+        optimizer.load_state_dict(torch.load(load_path, map_location=lambda storage, loc: storage.cuda(torch.cuda.current_device())))  # type: ignore
 
     def update_E(self, decay=0.999):
-        netG = self.get_bare_model(self.netG)
+        netG = self.get_bare_model(self.netG)  # type: ignore
         netG_params = dict(netG.named_parameters())
-        netE_params = dict(self.netE.named_parameters())
+        netE_params = dict(self.netE.named_parameters())  # type: ignore
         for k in netG_params.keys():
             netE_params[k].data.mul_(decay).add_(netG_params[k].data, alpha=1-decay)
 
@@ -207,8 +207,8 @@ class ModelBase():
     # merge bn during training
     # ----------------------------------------
     def merge_bnorm_train(self):
-        merge_bn(self.netG)
-        tidy_sequential(self.netG)
+        merge_bn(self.netG)  # type: ignore
+        tidy_sequential(self.netG)  # type: ignore
         self.define_optimizer()
         self.define_scheduler()
 
@@ -216,5 +216,5 @@ class ModelBase():
     # merge bn before testing
     # ----------------------------------------
     def merge_bnorm_test(self):
-        merge_bn(self.netG)
-        tidy_sequential(self.netG)
+        merge_bn(self.netG)  # type: ignore
+        tidy_sequential(self.netG)  # type: ignore

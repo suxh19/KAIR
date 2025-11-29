@@ -8,7 +8,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
-from timm.models.layers import DropPath, to_2tuple, trunc_normal_
+from timm.layers.drop import DropPath
+from timm.layers.helpers import to_2tuple
+from timm.layers.weight_init import trunc_normal_
 
 
 class Mlp(nn.Module):
@@ -92,7 +94,7 @@ class WindowAttention(nn.Module):
         # get pair-wise relative position index for each token inside the window
         coords_h = torch.arange(self.window_size[0])
         coords_w = torch.arange(self.window_size[1])
-        coords = torch.stack(torch.meshgrid([coords_h, coords_w]))  # 2, Wh, Ww
+        coords = torch.stack(torch.meshgrid([coords_h, coords_w], indexing='ij'))  # 2, Wh, Ww
         coords_flatten = torch.flatten(coords, 1)  # 2, Wh*Ww
         relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]  # 2, Wh*Ww, Wh*Ww
         relative_coords = relative_coords.permute(1, 2, 0).contiguous()  # Wh*Ww, Wh*Ww, 2
@@ -124,7 +126,7 @@ class WindowAttention(nn.Module):
         q = q * self.scale
         attn = (q @ k.transpose(-2, -1))
 
-        relative_position_bias = self.relative_position_bias_table[self.relative_position_index.view(-1)].view(
+        relative_position_bias = self.relative_position_bias_table[self.relative_position_index.view(-1)].view(  # type: ignore
             self.window_size[0] * self.window_size[1], self.window_size[0] * self.window_size[1], -1)  # Wh*Ww,Wh*Ww,nH
         relative_position_bias = relative_position_bias.permute(2, 0, 1).contiguous()  # nH, Wh*Ww, Wh*Ww
         attn = attn + relative_position_bias.unsqueeze(0)
@@ -410,7 +412,7 @@ class BasicLayer(nn.Module):
     def flops(self):
         flops = 0
         for blk in self.blocks:
-            flops += blk.flops()
+            flops += blk.flops()  # type: ignore
         if self.downsample is not None:
             flops += self.downsample.flops()
         return flops
@@ -493,7 +495,7 @@ class RSTB(nn.Module):
 
 
 class PatchEmbed(nn.Module):
-    r""" Image to Patch Embedding
+    """ Image to Patch Embedding
 
     Args:
         img_size (int): Image size.  Default: 224.
@@ -507,7 +509,7 @@ class PatchEmbed(nn.Module):
         super().__init__()
         img_size = to_2tuple(img_size)
         patch_size = to_2tuple(patch_size)
-        patches_resolution = [img_size[0] // patch_size[0], img_size[1] // patch_size[1]]
+        patches_resolution = [img_size[0] // patch_size[0], img_size[1] // patch_size[1]]  # type: ignore
         self.img_size = img_size
         self.patch_size = patch_size
         self.patches_resolution = patches_resolution
@@ -531,7 +533,7 @@ class PatchEmbed(nn.Module):
         flops = 0
         H, W = self.img_size
         if self.norm is not None:
-            flops += H * W * self.embed_dim
+            flops += H * W * self.embed_dim  # type: ignore
         return flops
 
 
@@ -550,7 +552,7 @@ class PatchUnEmbed(nn.Module):
         super().__init__()
         img_size = to_2tuple(img_size)
         patch_size = to_2tuple(patch_size)
-        patches_resolution = [img_size[0] // patch_size[0], img_size[1] // patch_size[1]]
+        patches_resolution = [img_size[0] // patch_size[0], img_size[1] // patch_size[1]]  # type: ignore
         self.img_size = img_size
         self.patch_size = patch_size
         self.patches_resolution = patches_resolution
@@ -598,19 +600,22 @@ class UpsampleOneStep(nn.Sequential):
     Args:
         scale (int): Scale factor. Supported scales: 2^n and 3.
         num_feat (int): Channel number of intermediate features.
+        num_out_ch (int): Channel number of output features.
 
     """
 
-    def __init__(self, scale, num_feat, num_out_ch, input_resolution=None):
+    def __init__(self, scale, num_feat, num_out_ch):
+        super(UpsampleOneStep, self).__init__()
+        self.scale = scale
         self.num_feat = num_feat
-        self.input_resolution = input_resolution
+        self.num_out_ch = num_out_ch
         m = []
         m.append(nn.Conv2d(num_feat, (scale ** 2) * num_out_ch, 3, 1, 1))
         m.append(nn.PixelShuffle(scale))
         super(UpsampleOneStep, self).__init__(*m)
 
     def flops(self):
-        H, W = self.input_resolution
+        H, W = self.input_resolution  # type: ignore
         flops = H * W * self.num_feat * 3 * 9
         return flops
 
@@ -712,7 +717,7 @@ class SwinIR(nn.Module):
                          mlp_ratio=self.mlp_ratio,
                          qkv_bias=qkv_bias, qk_scale=qk_scale,
                          drop=drop_rate, attn_drop=attn_drop_rate,
-                         drop_path=dpr[sum(depths[:i_layer]):sum(depths[:i_layer + 1])],  # no impact on SR results
+                         drop_path=dpr[sum(depths[:i_layer]):sum(depths[:i_layer + 1])],  # no impact on SR results  # type: ignore
                          norm_layer=norm_layer,
                          downsample=None,
                          use_checkpoint=use_checkpoint,
@@ -745,8 +750,7 @@ class SwinIR(nn.Module):
             self.conv_last = nn.Conv2d(num_feat, num_out_ch, 3, 1, 1)
         elif self.upsampler == 'pixelshuffledirect':
             # for lightweight SR (to save parameters)
-            self.upsample = UpsampleOneStep(upscale, embed_dim, num_out_ch,
-                                            (patches_resolution[0], patches_resolution[1]))
+            self.upsample = UpsampleOneStep(upscale, embed_dim, num_out_ch)
         elif self.upsampler == 'nearest+conv':
             # for real-world SR (less artifacts)
             assert self.upscale == 4, 'only support x4 now.'
@@ -772,11 +776,11 @@ class SwinIR(nn.Module):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    @torch.jit.ignore
+    @torch.jit.ignore()
     def no_weight_decay(self):
         return {'absolute_pos_embed'}
 
-    @torch.jit.ignore
+    @torch.jit.ignore()
     def no_weight_decay_keywords(self):
         return {'relative_position_bias_table'}
 
@@ -840,13 +844,13 @@ class SwinIR(nn.Module):
 
     def flops(self):
         flops = 0
-        H, W = self.patches_resolution
-        flops += H * W * 3 * self.embed_dim * 9
+        H, W = self.patches_resolution  # type: ignore
+        flops += H * W * 3 * self.embed_dim * 9  # type: ignore
         flops += self.patch_embed.flops()
         for i, layer in enumerate(self.layers):
-            flops += layer.flops()
+            flops += layer.flops()  # type: ignore
         flops += H * W * 3 * self.embed_dim * self.embed_dim
-        flops += self.upsample.flops()
+        flops += self.upsample.flops()  # type: ignore
         return flops
 
 
@@ -855,7 +859,7 @@ if __name__ == '__main__':
     window_size = 8
     height = (1024 // upscale // window_size + 1) * window_size
     width = (720 // upscale // window_size + 1) * window_size
-    model = SwinIR(upscale=2, img_size=(height, width),
+    model = SwinIR(upscale=2, img_size=(height, width),  # type: ignore
                    window_size=window_size, img_range=1., depths=[6, 6, 6, 6],
                    embed_dim=60, num_heads=[6, 6, 6, 6], mlp_ratio=2, upsampler='pixelshuffledirect')
     print(model)
