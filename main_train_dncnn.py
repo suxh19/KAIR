@@ -138,11 +138,11 @@ def main(json_path='options/train_dncnn.json'):
 
     if opt['merge_bn'] and current_step > opt['merge_bn_startpoint']:
         logger.info('^_^ -----merging bnorm----- ^_^')
-        model.merge_bnorm_test()
+        if opt.get('rank', 0) == 0:
+            logger.info(model.info_network())
+            # logger.info(model.info_params())  
 
-    logger.info(model.info_network())
-    model.init_train()
-    logger.info(model.info_params())
+    # logger.info(model.info_params())  # 注释掉冗长的参数打印  
 
     '''
     # ----------------------------------------
@@ -159,19 +159,19 @@ def main(json_path='options/train_dncnn.json'):
                 train_loader.dataset.update_data()
 
             # -------------------------------
-            # 1) update learning rate
-            # -------------------------------
-            model.update_learning_rate(current_step)
-
-            # -------------------------------
-            # 2) feed patch pairs
+            # 1) feed patch pairs
             # -------------------------------
             model.feed_data(train_data)
 
             # -------------------------------
-            # 3) optimize parameters
+            # 2) optimize parameters
             # -------------------------------
             model.optimize_parameters(current_step)
+
+            # -------------------------------
+            # 3) update learning rate
+            # -------------------------------
+            model.update_learning_rate(current_step)
 
             # -------------------------------
             # merge bnorm

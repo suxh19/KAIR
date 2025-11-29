@@ -2,6 +2,7 @@ import random
 import numpy as np
 import torch.utils.data as data
 import utils.utils_image as util
+from typing import Dict, Any, List, Optional, Union, cast
 
 
 class DatasetPlain(data.Dataset):
@@ -14,25 +15,29 @@ class DatasetPlain(data.Dataset):
     # -----------------------------------------
     '''
 
-    def __init__(self, opt):
+    def __init__(self, opt: Dict[str, Any]):
         super(DatasetPlain, self).__init__()
         print('Get L/H for image-to-image mapping. Both "paths_L" and "paths_H" are needed.')
-        self.opt = opt
-        self.n_channels = opt['n_channels'] if opt['n_channels'] else 3
-        self.patch_size = self.opt['H_size'] if self.opt['H_size'] else 64
+        self.opt: Dict[str, Any] = opt
+        self.n_channels: int = opt['n_channels'] if opt['n_channels'] else 3
+        self.patch_size: int = self.opt['H_size'] if self.opt['H_size'] else 64
 
         # ------------------------------------
         # get the path of L/H
         # ------------------------------------
-        self.paths_H = util.get_image_paths(opt['dataroot_H'])
-        self.paths_L = util.get_image_paths(opt['dataroot_L'])
-
-        assert self.paths_H, 'Error: H path is empty.'
-        assert self.paths_L, 'Error: L path is empty. Plain dataset assumes both L and H are given!'
+        paths_H: Optional[List[str]] = util.get_image_paths(opt['dataroot_H'])
+        paths_L: Optional[List[str]] = util.get_image_paths(opt['dataroot_L'])
+        
+        assert paths_H is not None, 'Error: H path is empty.'
+        assert paths_L is not None, 'Error: L path is empty. Plain dataset assumes both L and H are given!'
+        
+        self.paths_H: List[str] = paths_H
+        self.paths_L: List[str] = paths_L
+        
         if self.paths_L and self.paths_H:
             assert len(self.paths_L) == len(self.paths_H), 'L/H mismatch - {}, {}.'.format(len(self.paths_L), len(self.paths_H))
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int) -> Dict[str, Any]:
 
         # ------------------------------------
         # get H image
@@ -81,5 +86,5 @@ class DatasetPlain(data.Dataset):
 
         return {'L': img_L, 'H': img_H, 'L_path': L_path, 'H_path': H_path}
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.paths_H)

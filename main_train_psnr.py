@@ -7,11 +7,13 @@ import logging
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 import torch
+from typing import Dict, Any
 
 from utils import utils_logger
 from utils import utils_image as util
 from utils import utils_option as option
 from utils.utils_dist import get_dist_info, init_dist
+from utils.utils_option import NoneDict
 
 from data.select_dataset import define_Dataset
 from models.select_model import define_Model
@@ -29,7 +31,7 @@ from models.select_model import define_Model
 '''
 
 
-def main(json_path='options/train_msrresnet_psnr.json'):
+def main(json_path: str = 'options/train_msrresnet_psnr.json') -> None:
 
     '''
     # ----------------------------------------
@@ -39,21 +41,30 @@ def main(json_path='options/train_msrresnet_psnr.json'):
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--opt', type=str, default=json_path, help='Path to option JSON file.')
-    parser.add_argument('--launcher', default='pytorch', help='job launcher')
-    parser.add_argument('--local_rank', '--local-rank', type=int, default=0)
+    parser.add_argument('--launcher', choices=['none', 'pytorch'], default='none', help='job launcher')
+    parser.add_argument('--local_rank', type=int, default=0)
     parser.add_argument('--dist', default=False)
 
-    opt = option.parse(parser.parse_args().opt, is_train=True)
-    opt['dist'] = parser.parse_args().dist
+    args = parser.parse_args()
+    opt: Dict[str, Any] = option.parse(args.opt, is_train=True)
 
     # ----------------------------------------
     # distributed settings
     # ----------------------------------------
+    if args.launcher == 'none':  # disabled distributed training
+        opt['dist'] = False
+        print('Disabled distributed training, training by a single process.')
+    else:
+        opt['dist'] = True
+
+    opt['rank'], opt['world_size'] = get_dist_info()
     if opt['dist']:
         init_dist('pytorch')
-    opt['rank'], opt['world_size'] = get_dist_info()
 
-    if opt['rank'] == 0:
+    # ----------------------------------------
+    # save opt to  a '../option.json' file
+    # ----------------------------------------
+    if opt.get('rank', 0) == 0:
         util.mkdirs((path for key, path in opt['path'].items() if 'pretrained' not in key))
 
     # ----------------------------------------
@@ -74,18 +85,18 @@ def main(json_path='options/train_msrresnet_psnr.json'):
     # ----------------------------------------
     # save opt to  a '../option.json' file
     # ----------------------------------------
-    if opt['rank'] == 0:
+    if opt.get('rank', 0) == 0:
         option.save(opt)
 
     # ----------------------------------------
     # return None for missing key
     # ----------------------------------------
-    opt = option.dict_to_nonedict(opt)
+    opt = option.dict_to_nonedict(opt)  # type: ignore
 
     # ----------------------------------------
     # configure logger
     # ----------------------------------------
-    if opt['rank'] == 0:
+    if opt.get('rank', 0) == 0:
         logger_name = 'train'
         utils_logger.logger_info(logger_name, os.path.join(opt['path']['log'], logger_name+'.log'))
         logger = logging.getLogger(logger_name)
@@ -113,18 +124,18 @@ def main(json_path='options/train_msrresnet_psnr.json'):
     # 1) create_dataset
     # 2) creat_dataloader for train and test
     # ----------------------------------------
-    for phase, dataset_opt in opt['datasets'].items():
+    for phase, dataset_opt in opt.get('datasets', {}).items():
         if phase == 'train':
             train_set = define_Dataset(dataset_opt)
             train_size = int(math.ceil(len(train_set) / dataset_opt['dataloader_batch_size']))
-            if opt['rank'] == 0:
+            if opt.get('rank', 0) == 0:
                 logger.info('Number of train images: {:,d}, iters: {:,d}'.format(len(train_set), train_size))
-            if opt['dist']:
+            if opt.get('dist', False):
                 train_sampler = DistributedSampler(train_set, shuffle=dataset_opt['dataloader_shuffle'], drop_last=True, seed=seed)
                 train_loader = DataLoader(train_set,
-                                          batch_size=dataset_opt['dataloader_batch_size']//opt['num_gpu'],
+                                          batch_size=dataset_opt['dataloader_batch_size']//opt.get('num_gpu', 1),
                                           shuffle=False,
-                                          num_workers=dataset_opt['dataloader_num_workers']//opt['num_gpu'],
+                                          num_workers=dataset_opt['dataloader_num_workers']//opt.get('num_gpu', 1),
                                           drop_last=True,
                                           pin_memory=True,
                                           sampler=train_sampler)
@@ -152,9 +163,9 @@ def main(json_path='options/train_msrresnet_psnr.json'):
 
     model = define_Model(opt)
     model.init_train()
-    if opt['rank'] == 0:
+    if opt.get('rank', 0) == 0:
         logger.info(model.info_network())
-        logger.info(model.info_params())
+        # logger.info(model.info_params())  # 注释掉冗长的参数打印
 
     '''
     # ----------------------------------------
@@ -163,7 +174,7 @@ def main(json_path='options/train_msrresnet_psnr.json'):
     '''
 
     for epoch in range(1000000):  # keep running
-        if opt['dist']:
+        if opt.get('dist', False):
             train_sampler.set_epoch(epoch + seed)
 
         for i, train_data in enumerate(train_loader):
@@ -171,24 +182,24 @@ def main(json_path='options/train_msrresnet_psnr.json'):
             current_step += 1
 
             # -------------------------------
-            # 1) update learning rate
-            # -------------------------------
-            model.update_learning_rate(current_step)
-
-            # -------------------------------
-            # 2) feed patch pairs
+            # 1) feed patch pairs
             # -------------------------------
             model.feed_data(train_data)
 
             # -------------------------------
-            # 3) optimize parameters
+            # 2) optimize parameters
             # -------------------------------
             model.optimize_parameters(current_step)
 
             # -------------------------------
+            # 3) update learning rate
+            # -------------------------------
+            model.update_learning_rate(current_step)
+
+            # -------------------------------
             # 4) training information
             # -------------------------------
-            if current_step % opt['train']['checkpoint_print'] == 0 and opt['rank'] == 0:
+            if current_step % opt['train']['checkpoint_print'] == 0 and opt.get('rank', 0) == 0:
                 logs = model.current_log()  # such as loss
                 message = '<epoch:{:3d}, iter:{:8,d}, lr:{:.3e}> '.format(epoch, current_step, model.current_learning_rate())
                 for k, v in logs.items():  # merge log information into message
@@ -198,14 +209,14 @@ def main(json_path='options/train_msrresnet_psnr.json'):
             # -------------------------------
             # 5) save model
             # -------------------------------
-            if current_step % opt['train']['checkpoint_save'] == 0 and opt['rank'] == 0:
+            if current_step % opt['train']['checkpoint_save'] == 0 and opt.get('rank', 0) == 0:
                 logger.info('Saving the model.')
                 model.save(current_step)
 
             # -------------------------------
             # 6) testing
             # -------------------------------
-            if current_step % opt['train']['checkpoint_test'] == 0 and opt['rank'] == 0:
+            if current_step % opt['train']['checkpoint_test'] == 0 and opt.get('rank', 0) == 0:
 
                 avg_psnr = 0.0
                 idx = 0

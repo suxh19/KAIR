@@ -159,7 +159,7 @@ def main(json_path='options/train_msrresnet_gan.json'):
     model.init_train()
     if opt['rank'] == 0:
         logger.info(model.info_network())
-        logger.info(model.info_params())
+        # logger.info(model.info_params())  # 注释掉冗长的参数打印
 
     '''
     # ----------------------------------------
@@ -176,19 +176,19 @@ def main(json_path='options/train_msrresnet_gan.json'):
             current_step += 1
 
             # -------------------------------
-            # 1) update learning rate
-            # -------------------------------
-            model.update_learning_rate(current_step)
-
-            # -------------------------------
-            # 2) feed patch pairs
+            # 1) feed patch pairs
             # -------------------------------
             model.feed_data(train_data)
 
             # -------------------------------
-            # 3) optimize parameters
+            # 2) optimize parameters
             # -------------------------------
             model.optimize_parameters(current_step)
+
+            # -------------------------------
+            # 3) update learning rate
+            # -------------------------------
+            model.update_learning_rate(current_step)
 
             # -------------------------------
             # 4) training information
