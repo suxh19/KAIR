@@ -23,7 +23,7 @@
       "H_size": 64,
       "dataloader_shuffle": true,
       "dataloader_num_workers": 8,
-      "dataloader_batch_size": 4      
+      "dataloader_batch_size": 8      
     },
     "test": {
       "name": "test_dataset",
