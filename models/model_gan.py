@@ -128,11 +128,10 @@ class ModelGAN(ModelBase):
             F_lossfn_type = self.opt_train['F_lossfn_type']
             F_use_input_norm = self.opt_train['F_use_input_norm']
             F_use_range_norm = self.opt_train['F_use_range_norm']
-            if self.opt['dist']:
-                self.F_lossfn = PerceptualLoss(feature_layer=F_feature_layer, weights=F_weights, lossfn_type=F_lossfn_type, use_input_norm=F_use_input_norm, use_range_norm=F_use_range_norm).to(self.device)
-            else:
-                self.F_lossfn = PerceptualLoss(feature_layer=F_feature_layer, weights=F_weights, lossfn_type=F_lossfn_type, use_input_norm=F_use_input_norm, use_range_norm=F_use_range_norm)
-                self.F_lossfn.vgg = self.model_to_device(self.F_lossfn.vgg)
+            self.F_lossfn = PerceptualLoss(feature_layer=F_feature_layer, weights=F_weights, lossfn_type=F_lossfn_type, use_input_norm=F_use_input_norm, use_range_norm=F_use_range_norm).to(self.device)
+            # Handle device placement for vgg model inside PerceptualLoss
+            if not self.opt['dist']:
+                self.F_lossfn.vgg = self.model_to_device(self.F_lossfn.vgg)  # type: ignore
                 self.F_lossfn.lossfn = self.F_lossfn.lossfn.to(self.device)
             self.F_lossfn_weight = self.opt_train['F_lossfn_weight']
         else:
@@ -208,13 +207,13 @@ class ModelGAN(ModelBase):
 
         self.G_optimizer.zero_grad()
         self.netG_forward()
-        loss_G_total = 0
+        loss_G_total = torch.tensor(0.0, device=self.device)
 
         if current_step % self.D_update_ratio == 0 and current_step > self.D_init_iters:  # updata D first
-            if self.opt_train['G_lossfn_weight'] > 0:
+            if self.opt_train['G_lossfn_weight'] > 0 and self.G_lossfn is not None:
                 G_loss = self.G_lossfn_weight * self.G_lossfn(self.E, self.H)
                 loss_G_total += G_loss                 # 1) pixel loss
-            if self.opt_train['F_lossfn_weight'] > 0:
+            if self.opt_train['F_lossfn_weight'] > 0 and self.F_lossfn is not None:
                 F_loss = self.F_lossfn_weight * self.F_lossfn(self.E, self.H)
                 loss_G_total += F_loss                 # 2) VGG feature loss
 
