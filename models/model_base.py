@@ -5,8 +5,9 @@ from utils.utils_bnorm import merge_bn, tidy_sequential
 from torch.nn.parallel import DataParallel, DistributedDataParallel
 
 
-class ModelBase():
+class ModelBase(nn.Module):
     def __init__(self, opt):
+        super().__init__()
         self.opt = opt                         # opt
         self.save_dir = opt['path']['models']  # save models
         self.device = torch.device('cuda' if opt['gpu_ids'] is not None else 'cpu')
@@ -86,7 +87,7 @@ class ModelBase():
     def info_params(self):
         pass
 
-    def get_bare_model(self, network):
+    def get_bare_model(self, network) -> nn.Module:
         """Get bare model, especially under wrapping with
         DistributedDataParallel or DataParallel.
         """
