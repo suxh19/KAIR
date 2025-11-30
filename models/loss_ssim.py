@@ -87,7 +87,9 @@ if __name__ == '__main__':
     from torch import optim
     from skimage import io
     npImg1 = cv2.imread("einstein.png")
-
+    if npImg1 is None:
+        raise FileNotFoundError("无法读取图像文件 einstein.png")
+    
     img1 = torch.from_numpy(np.rollaxis(npImg1, 2)).float().unsqueeze(0)/255.0
     img2 = torch.rand(img1.size())
 
