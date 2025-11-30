@@ -9,6 +9,7 @@ from datetime import datetime
 # import torchvision.transforms as transforms
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 
@@ -52,7 +53,8 @@ def surf(Z, cmap='rainbow', figsize=None):
     xx = np.arange(0,w,1)
     yy = np.arange(0,h,1)
     X, Y = np.meshgrid(xx, yy)
-    ax3.plot_surface(X,Y,Z,cmap=cmap)
+    # 使用类型忽略来避免 matplotlib 类型检查问题
+    ax3.plot_surface(X, Y, Z, cmap=cmap)  # type: ignore
     #ax3.contour(X,Y,Z, zdim='z',offset=-2，cmap=cmap)
     plt.show()
 
@@ -98,8 +100,8 @@ def patches_from_image(img, p_size=512, p_overlap=64, p_max=800):
     w, h = img.shape[:2]
     patches = []
     if w > p_max and h > p_max:
-        w1 = list(np.arange(0, w-p_size, p_size-p_overlap, dtype=np.int))
-        h1 = list(np.arange(0, h-p_size, p_size-p_overlap, dtype=np.int))
+        w1 = list(np.arange(0, w-p_size, p_size-p_overlap, dtype=int))
+        h1 = list(np.arange(0, h-p_size, p_size-p_overlap, dtype=int))
         w1.append(w-p_size)
         h1.append(h-p_size)
         # print(w1)
@@ -139,6 +141,8 @@ def split_imageset(original_dataroot, taget_dataroot, n_channels=3, p_size=512, 
         p_max: images with smaller size than (p_max)x(p_max) keep unchanged.
     """
     paths = get_image_paths(original_dataroot)
+    if paths is None:
+        return
     for img_path in paths:
         # img_name, ext = os.path.splitext(os.path.basename(img_path))
         img = imread_uint(img_path, n_channels=n_channels)
@@ -191,9 +195,14 @@ def imread_uint(path, n_channels=3):
     # output: HxWx3(RGB or GGG), or HxWx1 (G)
     if n_channels == 1:
         img = cv2.imread(path, 0)  # cv2.IMREAD_GRAYSCALE
-        img = np.expand_dims(img, axis=2)  # HxWx1
+        if img is not None:
+            img = np.expand_dims(img, axis=2)  # HxWx1
+        else:
+            raise ValueError(f"无法读取图像: {path}")
     elif n_channels == 3:
         img = cv2.imread(path, cv2.IMREAD_UNCHANGED)  # BGR or G
+        if img is None:
+            raise ValueError(f"无法读取图像: {path}")
         if img.ndim == 2:
             img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)  # GGG
         else:
@@ -225,6 +234,8 @@ def read_img(path):
     # read image by cv2
     # return: Numpy float32, HWC, BGR, [0,1]
     img = cv2.imread(path, cv2.IMREAD_UNCHANGED)  # cv2.IMREAD_GRAYSCALE
+    if img is None:
+        raise ValueError(f"无法读取图像: {path}")
     img = img.astype(np.float32) / 255.
     if img.ndim == 2:
         img = np.expand_dims(img, axis=2)
@@ -678,7 +689,9 @@ def ssim(img1, img2):
     img1 = img1.astype(np.float64)
     img2 = img2.astype(np.float64)
     kernel = cv2.getGaussianKernel(11, 1.5)
-    window = np.outer(kernel, kernel.transpose())
+    # 使用类型忽略来解决 numpy outer 函数的类型问题
+    window = np.outer(kernel.flatten(), kernel.flatten())  # type: ignore
+    window = window.reshape(11, 11)
 
     mu1 = cv2.filter2D(img1, -1, window)[5:-5, 5:-5]  # valid
     mu2 = cv2.filter2D(img2, -1, window)[5:-5, 5:-5]

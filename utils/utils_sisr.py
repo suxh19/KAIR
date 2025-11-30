@@ -6,10 +6,11 @@ import scipy
 import scipy.stats as ss
 import scipy.io as io
 from scipy import ndimage
-from scipy.interpolate import interp2d
+from scipy.interpolate import RegularGridInterpolator
 
 import numpy as np
 import torch
+from typing import List
 
 
 """
@@ -249,7 +250,7 @@ def srmd_degradation(x, k, sf=3):
           year={2018}
         }
     '''
-    x = ndimage.filters.convolve(x, np.expand_dims(k, axis=2), mode='wrap')  # 'nearest' | 'mirror'
+    x = ndimage.convolve(x, np.expand_dims(k, axis=2), mode='wrap')  # 'nearest' | 'mirror'
     x = bicubic_degradation(x, sf=sf)
     return x
 
@@ -273,7 +274,7 @@ def dpsr_degradation(x, k, sf=3):
         }
     '''
     x = bicubic_degradation(x, sf=sf)
-    x = ndimage.filters.convolve(x, np.expand_dims(k, axis=2), mode='wrap')
+    x = ndimage.convolve(x, np.expand_dims(k, axis=2), mode='wrap')
     return x
 
 
@@ -288,7 +289,7 @@ def classical_degradation(x, k, sf=3):
     Return:
         downsampled LR image
     '''
-    x = ndimage.filters.convolve(x, np.expand_dims(k, axis=2), mode='wrap')
+    x = ndimage.convolve(x, np.expand_dims(k, axis=2), mode='wrap')
     #x = filters.correlate(x, np.expand_dims(np.flip(k), axis=2))
     st = 0
     return x[st::sf, st::sf, ...]
@@ -335,10 +336,14 @@ def shift_pixel(x, sf, upper_left=True):
     y1 = np.clip(y1, 0, h-1)
 
     if x.ndim == 2:
-        x = interp2d(xv, yv, x)(x1, y1)
+        interp = RegularGridInterpolator((yv, xv), x.T, method='linear', bounds_error=False, fill_value=0)
+        points = np.column_stack([y1, x1])
+        x = interp(points).reshape(x.shape)
     if x.ndim == 3:
         for i in range(x.shape[-1]):
-            x[:, :, i] = interp2d(xv, yv, x[:, :, i])(x1, y1)
+            interp = RegularGridInterpolator((yv, xv), x[:, :, i].T, method='linear', bounds_error=False, fill_value=0)
+            points = np.column_stack([y1, x1])
+            x[:, :, i] = interp(points).reshape(x[:, :, i].shape)
 
     return x
 
@@ -407,19 +412,19 @@ def cconj(t, inplace=False):
 
 
 def rfft(t):
-    return torch.rfft(t, 2, onesided=False)
+    return torch.view_as_real(torch.fft.fftn(t, dim=(-2,-1)))
 
 
 def irfft(t):
-    return torch.irfft(t, 2, onesided=False)
+    return torch.fft.ifftn(torch.view_as_complex(t), dim=(-2,-1)).real
 
 
 def fft(t):
-    return torch.fft(t, 2)
+    return torch.view_as_real(torch.fft.fftn(torch.view_as_complex(t), dim=(-2,-1)))
 
 
 def ifft(t):
-    return torch.ifft(t, 2)
+    return torch.view_as_real(torch.fft.ifftn(torch.view_as_complex(t), dim=(-2,-1)))
 
 
 def p2o(psf, shape):
@@ -435,7 +440,7 @@ def p2o(psf, shape):
     otf[...,:psf.shape[2],:psf.shape[3]].copy_(psf)
     for axis, axis_size in enumerate(psf.shape[2:]):
         otf = torch.roll(otf, -int(axis_size / 2), dims=axis+2)
-    otf = torch.rfft(otf, 2, onesided=False)
+    otf = torch.view_as_real(torch.fft.fftn(otf, dim=(-2,-1)))
     n_ops = torch.sum(torch.tensor(psf.shape).type_as(psf) * torch.log2(torch.tensor(psf.shape).type_as(psf)))
     otf[...,1][torch.abs(otf[...,1])<n_ops*2.22e-16] = torch.tensor(0).type_as(psf)
     return otf
@@ -467,7 +472,7 @@ def INVLS_pytorch(FB, FBC, F2B, FR, tau, sf=2):
     invWBR = cdiv(FBR, csum(invW, tau))
     FCBinvWBR = cmul(FBC, invWBR.repeat(1,1,sf,sf,1))
     FX = (FR-FCBinvWBR)/tau
-    Xest = torch.irfft(FX, 2, onesided=False)
+    Xest = torch.fft.ifftn(torch.view_as_complex(FX), dim=(-2,-1)).real
     return Xest
 
 
@@ -512,7 +517,6 @@ def circular_pad(x, pad):
 
 
 def pad_circular(input, padding):
-    # type: (Tensor, List[int]) -> Tensor
     """
     Arguments
     :param input: tensor of shape :math:`(N, C_{\text{in}}, H, [W, D]))`
@@ -528,7 +532,6 @@ def pad_circular(input, padding):
 
 
 def dim_pad_circular(input, padding, dimension):
-    # type: (Tensor, int, int) -> Tensor
     input = torch.cat([input, input[[slice(None)] * (dimension - 1) +
                       [slice(0, padding)]]], dim=dimension - 1)
     input = torch.cat([input[[slice(None)] * (dimension - 1) +
@@ -541,7 +544,7 @@ def imfilter(x, k):
     x: image, NxcxHxW
     k: kernel, cx1xhxw
     '''
-    x = pad_circular(x, padding=((k.shape[-2]-1)//2, (k.shape[-1]-1)//2))
+    x = pad_circular(x, padding=[(k.shape[-2]-1)//2, (k.shape[-1]-1)//2])
     x = torch.nn.functional.conv2d(x, k, groups=x.shape[1])
     return x
 
@@ -729,7 +732,7 @@ def zero_pad(image, shape, position='corner'):
     """
     shape = np.asarray(shape, dtype=int)
     imshape = np.asarray(image.shape, dtype=int)
-    if np.alltrue(imshape == shape):
+    if np.all(imshape == shape):
         return image
     if np.any(shape <= 0):
         raise ValueError("ZERO_PAD: null or negative shape given")
@@ -737,7 +740,7 @@ def zero_pad(image, shape, position='corner'):
     if np.any(dshape < 0):
         raise ValueError("ZERO_PAD: target size smaller than source one")
     pad_img = np.zeros(shape, dtype=image.dtype)
-    idx, idy = np.indices(imshape)
+    idx, idy = np.indices(tuple(imshape))
     if position == 'center':
         if np.any(dshape % 2 != 0):
             raise ValueError("ZERO_PAD: source and target shapes "
@@ -766,7 +769,7 @@ def imfilter_np(x, k):
     x: image, NxcxHxW
     k: kernel, cx1xhxw
     '''
-    x = ndimage.filters.convolve(x, np.expand_dims(k, axis=2), mode='wrap')
+    x = ndimage.convolve(x, np.expand_dims(k, axis=2), mode='wrap')
     return x
 
 
@@ -825,11 +828,11 @@ if __name__ == '__main__':
         img_d = classical_degradation(img, k, sf=sf)
         print(img_d.shape)
 
-    k = anisotropic_Gaussian(ksize=7, theta=0.25*np.pi, l1=0.01, l2=0.01)
+    k = anisotropic_Gaussian(ksize=7, theta=0.25*np.pi, l1=int(0.01), l2=int(0.01))
     #print(k)
 #    util.imshow(k*10)
 
-    k = shifted_anisotropic_Gaussian(k_size=np.array([15, 15]), scale_factor=np.array([4, 4]), min_var=0.8, max_var=10.8, noise_level=0.0)
+    k = shifted_anisotropic_Gaussian(k_size=np.array([15, 15]), scale_factor=np.array([4, 4]), min_var=0.8, max_var=10.8, noise_level=int(0.0))
 #    util.imshow(k*10)
 
 
