@@ -87,7 +87,7 @@ def rgb2gray_net(net, only_input=True):
 
 if __name__ == '__main__':
     
-    net = torchvision.models.vgg19(pretrained=True)
+    net = torchvision.models.vgg19(weights=torchvision.models.VGG19_Weights.DEFAULT)
     for k,v in net.features.named_parameters():
         if k=='0.weight':
             in_new_filter = v[:,0,:,:]*0.2989 + v[:,1,:,:]*0.587 + v[:,2,:,:]*0.114
@@ -99,13 +99,13 @@ if __name__ == '__main__':
             in_new_bias = v
             print(v[0])
 
-    print(net.features[0])
+    print(net.features[0])  # type: ignore
 
-    net.features[0] = B.conv(1, 64, mode='C') 
+    net.features[0] = B.conv(1, 64, mode='C')  # type: ignore
 
-    print(net.features[0])
-    net.features[0].weight.data=in_new_filter
-    net.features[0].bias.data=in_new_bias
+    print(net.features[0])  # type: ignore
+    net.features[0].weight.data = in_new_filter  # type: ignore
+    net.features[0].bias.data = in_new_bias  # type: ignore
 
     for k,v in net.features.named_parameters():
         if k=='0.weight':
@@ -114,16 +114,16 @@ if __name__ == '__main__':
             print(v[0])
 
     # transfer parameters of old model to new one
-    model_old = torch.load(model_path)
-    state_dict = model.state_dict()
-    for ((key, param),(key2, param2)) in zip(model_old.items(), state_dict.items()):
-        state_dict[key2] = param
-        print([key, key2])
-       # print([param.size(), param2.size()])
-    torch.save(state_dict, 'model_new.pth') 
+    # model_old = torch.load(model_path)
+    # state_dict = model.state_dict()
+    # for ((key, param),(key2, param2)) in zip(model_old.items(), state_dict.items()):
+    #     state_dict[key2] = param
+    #     print([key, key2])
+    #    # print([param.size(), param2.size()])
+    # torch.save(state_dict, 'model_new.pth') 
 
 
-   # rgb2gray_net(net)
+    # rgb2gray_net(net)
 
 
 

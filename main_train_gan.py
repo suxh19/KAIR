@@ -4,6 +4,7 @@ import argparse
 import random
 import numpy as np
 import logging
+from typing import Dict, Any, Union
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 import torch
@@ -27,7 +28,7 @@ from models.select_model import define_Model
 '''
 
 
-def main(json_path='options/train_msrresnet_gan.json'):
+def main(json_path: str = 'options/train_msrresnet_gan.json') -> None:
 
     '''
     # ----------------------------------------
@@ -41,7 +42,7 @@ def main(json_path='options/train_msrresnet_gan.json'):
     parser.add_argument('--local_rank', type=int, default=0)
     parser.add_argument('--dist', default=False)
 
-    opt = option.parse(parser.parse_args().opt, is_train=True)
+    opt: Dict[str, Any] = option.parse(parser.parse_args().opt, is_train=True)
     opt['dist'] = parser.parse_args().dist
 
     # ----------------------------------------
@@ -51,35 +52,37 @@ def main(json_path='options/train_msrresnet_gan.json'):
         init_dist('pytorch')
     opt['rank'], opt['world_size'] = get_dist_info()
 
-    if opt['rank'] == 0:
-        util.mkdirs((path for key, path in opt['path'].items() if 'pretrained' not in key))
+    # opt is a dictionary with string keys, so we need to cast for type checking
+    opt_dict: Dict[str, Any] = opt  # type: ignore
+    if opt_dict.get('rank', 0) == 0:
+        util.mkdirs((path for key, path in opt_dict.get('path', {}).items() if 'pretrained' not in key))
 
     # ----------------------------------------
     # update opt
     # ----------------------------------------
     # -->-->-->-->-->-->-->-->-->-->-->-->-->-
-    init_iter_G, init_path_G = option.find_last_checkpoint(opt['path']['models'], net_type='G')
-    init_iter_D, init_path_D = option.find_last_checkpoint(opt['path']['models'], net_type='D')
-    init_iter_E, init_path_E = option.find_last_checkpoint(opt['path']['models'], net_type='E')
-    opt['path']['pretrained_netG'] = init_path_G
-    opt['path']['pretrained_netD'] = init_path_D
-    opt['path']['pretrained_netE'] = init_path_E
-    init_iter_optimizerG, init_path_optimizerG = option.find_last_checkpoint(opt['path']['models'], net_type='optimizerG')
-    init_iter_optimizerD, init_path_optimizerD = option.find_last_checkpoint(opt['path']['models'], net_type='optimizerD')
-    opt['path']['pretrained_optimizerG'] = init_path_optimizerG
-    opt['path']['pretrained_optimizerD'] = init_path_optimizerD
+    init_iter_G, init_path_G = option.find_last_checkpoint(opt_dict.get('path', {}).get('models', ''), net_type='G')
+    init_iter_D, init_path_D = option.find_last_checkpoint(opt_dict.get('path', {}).get('models', ''), net_type='D')
+    init_iter_E, init_path_E = option.find_last_checkpoint(opt_dict.get('path', {}).get('models', ''), net_type='E')
+    opt_dict['path']['pretrained_netG'] = init_path_G
+    opt_dict['path']['pretrained_netD'] = init_path_D
+    opt_dict['path']['pretrained_netE'] = init_path_E
+    init_iter_optimizerG, init_path_optimizerG = option.find_last_checkpoint(opt_dict.get('path', {}).get('models', ''), net_type='optimizerG')
+    init_iter_optimizerD, init_path_optimizerD = option.find_last_checkpoint(opt_dict.get('path', {}).get('models', ''), net_type='optimizerD')
+    opt_dict['path']['pretrained_optimizerG'] = init_path_optimizerG
+    opt_dict['path']['pretrained_optimizerD'] = init_path_optimizerD
     current_step = max(init_iter_G, init_iter_D, init_iter_E, init_iter_optimizerG, init_iter_optimizerD)
 
     # opt['path']['pretrained_netG'] = ''
     # current_step = 0
-    border = opt['scale']
+    border = opt_dict.get('scale', 1)
     # --<--<--<--<--<--<--<--<--<--<--<--<--<-
 
     # ----------------------------------------
     # save opt to  a '../option.json' file
     # ----------------------------------------
-    if opt['rank'] == 0:
-        option.save(opt)
+    if opt_dict.get('rank', 0) == 0:
+        option.save(opt_dict)
 
     # ----------------------------------------
     # return None for missing key
@@ -89,16 +92,16 @@ def main(json_path='options/train_msrresnet_gan.json'):
     # ----------------------------------------
     # configure logger
     # ----------------------------------------
-    if opt['rank'] == 0:
+    if opt_dict.get('rank', 0) == 0:
         logger_name = 'train'
-        utils_logger.logger_info(logger_name, os.path.join(opt['path']['log'], logger_name+'.log'))
+        utils_logger.logger_info(logger_name, os.path.join(opt_dict.get('path', {}).get('log', ''), logger_name+'.log'))
         logger = logging.getLogger(logger_name)
-        logger.info(option.dict2str(opt))
+        logger.info(option.dict2str(opt_dict))
 
     # ----------------------------------------
     # seed
     # ----------------------------------------
-    seed = opt['train']['manual_seed']
+    seed = opt_dict.get('train', {}).get('manual_seed')
     if seed is None:
         seed = random.randint(1, 10000)
     print('Random seed: {}'.format(seed))
@@ -117,18 +120,18 @@ def main(json_path='options/train_msrresnet_gan.json'):
     # 1) create_dataset
     # 2) creat_dataloader for train and test
     # ----------------------------------------
-    for phase, dataset_opt in opt['datasets'].items():
+    for phase, dataset_opt in opt_dict.get('datasets', {}).items():
         if phase == 'train':
             train_set = define_Dataset(dataset_opt)
             train_size = int(math.ceil(len(train_set) / dataset_opt['dataloader_batch_size']))
-            if opt['rank'] == 0:
+            if opt_dict.get('rank', 0) == 0:
                 logger.info('Number of train images: {:,d}, iters: {:,d}'.format(len(train_set), train_size))
-            if opt['dist']:
+            if opt_dict.get('dist', False):
                 train_sampler = DistributedSampler(train_set, shuffle=dataset_opt['dataloader_shuffle'], drop_last=True, seed=seed)
                 train_loader = DataLoader(train_set,
-                                          batch_size=dataset_opt['dataloader_batch_size']//opt['num_gpu'],
+                                          batch_size=dataset_opt['dataloader_batch_size']//opt_dict.get('num_gpu', 1),
                                           shuffle=False,
-                                          num_workers=dataset_opt['dataloader_num_workers']//opt['num_gpu'],
+                                          num_workers=dataset_opt['dataloader_num_workers']//opt_dict.get('num_gpu', 1),
                                           drop_last=True,
                                           pin_memory=True,
                                           sampler=train_sampler)
@@ -154,10 +157,10 @@ def main(json_path='options/train_msrresnet_gan.json'):
     # ----------------------------------------
     '''
 
-    model = define_Model(opt)
+    model = define_Model(opt_dict)
 
     model.init_train()
-    if opt['rank'] == 0:
+    if opt_dict.get('rank', 0) == 0:
         logger.info(model.info_network())
         # logger.info(model.info_params())  # 注释掉冗长的参数打印
 
@@ -168,7 +171,7 @@ def main(json_path='options/train_msrresnet_gan.json'):
     '''
 
     for epoch in range(1000000):  # keep running
-        if opt['dist']:
+        if opt_dict.get('dist', False):
             train_sampler.set_epoch(epoch + seed)
 
         for i, train_data in enumerate(train_loader):
@@ -193,7 +196,7 @@ def main(json_path='options/train_msrresnet_gan.json'):
             # -------------------------------
             # 4) training information
             # -------------------------------
-            if current_step % opt['train']['checkpoint_print'] == 0 and opt['rank'] == 0:
+            if current_step % opt_dict.get('train', {}).get('checkpoint_print', 200) == 0 and opt_dict.get('rank', 0) == 0:
                 logs = model.current_log()  # such as loss
                 message = '<epoch:{:3d}, iter:{:8,d}, lr:{:.3e}> '.format(epoch, current_step, model.current_learning_rate())
                 for k, v in logs.items():  # merge log information into message
@@ -203,14 +206,14 @@ def main(json_path='options/train_msrresnet_gan.json'):
             # -------------------------------
             # 5) save model
             # -------------------------------
-            if current_step % opt['train']['checkpoint_save'] == 0 and opt['rank'] == 0:
+            if current_step % opt_dict.get('train', {}).get('checkpoint_save', 5000) == 0 and opt_dict.get('rank', 0) == 0:
                 logger.info('Saving the model.')
                 model.save(current_step)
 
             # -------------------------------
             # 6) testing
             # -------------------------------
-            if current_step % opt['train']['checkpoint_test'] == 0 and opt['rank'] == 0:
+            if current_step % opt_dict.get('train', {}).get('checkpoint_test', 5000) == 0 and opt_dict.get('rank', 0) == 0:
 
                 avg_psnr = 0.0
                 idx = 0
@@ -220,7 +223,7 @@ def main(json_path='options/train_msrresnet_gan.json'):
                     image_name_ext = os.path.basename(test_data['L_path'][0])
                     img_name, ext = os.path.splitext(image_name_ext)
 
-                    img_dir = os.path.join(opt['path']['images'], img_name)
+                    img_dir = os.path.join(opt_dict.get('path', {}).get('images', ''), img_name)
                     util.mkdir(img_dir)
 
                     model.feed_data(test_data)
