@@ -22,7 +22,7 @@ share/python-wheels/
 *.egg
 MANIFEST
 
-ct_artifact/swinir_ct_artifact/images
+images/
 
 # Virtual environments
 .env
@@ -49,7 +49,7 @@ venv.bak/
 ehthumbs.db
 Thumbs.db
 
-ct_artifact/swinir_ct_artifact/options/*
+options/
 
 # Jupyter Notebook
 .ipynb_checkpoints

@@ -6,9 +6,9 @@
   "n_channels": 1,
   "path": {
     "root": "ct_artifact",
-    "pretrained_netG": null,
+    "pretrained_netG": "/home/suxh/mount/code/pycode/KAIR/ct_artifact/swinir_ct_artifact/models/120000_G.pth",
     "pretrained_netD": null,
-    "pretrained_netE": null
+    "pretrained_netE": "/home/suxh/mount/code/pycode/KAIR/ct_artifact/swinir_ct_artifact/models/120000_E.pth"
   },
 
 
