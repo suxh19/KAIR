@@ -49,7 +49,7 @@ class MSRResNet_prior(nn.Module):
         m_head = B.conv(in_nc, nc, mode='C')
 
         m_body = [B.ResBlock(nc, nc, mode='C'+act_mode+'C') for _ in range(nb)]
-        m_body.append(B.conv(nc, nc, mode='C'))
+        m_body = m_body + [B.conv(nc, nc, mode='C')]
 
         if upsample_mode == 'upconv':
             upsample_block = B.upsample_upconv
@@ -86,7 +86,7 @@ class SRResNet(nn.Module):
         m_head = B.conv(in_nc, nc, mode='C')
 
         m_body = [B.ResBlock(nc, nc, mode='C'+act_mode+'C') for _ in range(nb)]
-        m_body.append(B.conv(nc, nc, mode='C'))
+        m_body = m_body + [B.conv(nc, nc, mode='C')]
 
         if upsample_mode == 'upconv':
             upsample_block = B.upsample_upconv
