@@ -1,0 +1,56 @@
+Bootstrap: docker
+From: python:3.12-slim
+
+%labels
+    Author User
+    Version 1.0
+    Description KAIR Project Environment
+
+%files
+    # 将当前目录下的 requirement.txt 复制到容器内的 /app 目录
+    requirement.txt /app/requirement.txt
+    # 如果你需要把代码也打包进去，取消下面行的注释
+    # . /app/KAIR
+
+%post
+    # 1. 安装系统依赖
+    # update apt and install libraries
+    apt-get update && apt-get install -y \
+        git \
+        libgl1 \
+        libglib2.0-0 \
+        wget \
+        && rm -rf /var/lib/apt/lists/*
+
+    # 2. 安装 uv
+    pip install uv
+
+    # 3. 创建虚拟环境并安装依赖
+    # 我们将虚拟环境创建在 /app/.venv
+    cd /app
+    uv venv .venv
+    
+    # 激活环境并安装依赖
+    . .venv/bin/activate
+    
+    # 安装 PyTorch (推荐显式指定 CUDA 版本，这里以 2.4.0+cu121 为例，或者让 uv 自动解析)
+    # 注意：你的 requirement.txt 里没有 torch，只有 torchvision。
+    # 为了确保兼容性，我们先安装 torch/torchvision
+    uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+    
+    # 安装 requirement.txt 中的其他依赖
+    uv pip install -r requirement.txt
+
+
+%environment
+    # 设置环境变量，使容器启动时自动使用虚拟环境
+    export VIRTUAL_ENV="/app/.venv"
+    export PATH="/app/.venv/bin:$PATH"
+    
+    # 设置 uv 的一些配置（可选）
+    export UV_CACHE_DIR="/tmp/uv-cache"
+
+%runscript
+    # 容器默认执行的命令
+    # 例如：singularity run image.sif python main.py
+    exec "$@"
