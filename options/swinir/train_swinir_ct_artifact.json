@@ -1,7 +1,7 @@
 {
   "task": "swinir_sr_realworld_x4_gan",
   "model": "gan",
-  "gpu_ids": [2],
+  "gpu_ids": [2, 3],
   "scale": 1,
   "n_channels": 1,
   "path": {
@@ -19,17 +19,17 @@
       "dataroot_H": "trainsets/CT_Artifact/train/H",
       "dataroot_L": "trainsets/CT_Artifact/train/L",
 
-      "H_size": 96,
+      "H_size": 128,
       "dataloader_shuffle": true,
       "dataloader_num_workers": 8,
-      "dataloader_batch_size": 4      
+      "dataloader_batch_size": 4    
     },
     "test": {
       "name": "test_dataset",
       "dataset_type": "plain",
       "dataroot_H": "trainsets/CT_Artifact/test/H",
       "dataroot_L": "trainsets/CT_Artifact/test/L",
-      "H_size": 96
+      "H_size": 128
     }
   },
 
@@ -64,7 +64,7 @@
     "G_lossfn_type": "l1",
     "G_lossfn_weight": 1,
     "F_lossfn_type": "l2",
-    "F_lossfn_weight": 1,
+    "F_lossfn_weight": 0.5,
     "F_feature_layer": [2,7,16,25,34],
     "F_weights": [0.1,0.1,1.0,1.0,1.0],
     "F_use_input_norm": true,
@@ -87,7 +87,7 @@
     "D_scheduler_type": "MultiStepLR",
     "D_scheduler_milestones": [400000, 500000, 550000, 575000, 600000],
     "D_scheduler_gamma": 0.5,
-    "D_optimizer_reuse": false,
+    "D_optimizer_reuse": true,
     "G_param_strict": true,
     "D_param_strict": true,
     "E_param_strict": true,
