@@ -14,7 +14,7 @@ from utils import utils_image as util
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--task', type=str, default='color_dn', help='classical_sr, lightweight_sr, real_sr, '
-                                                                     'gray_dn, color_dn, jpeg_car')
+                                                                     'gray_dn, color_dn, jpeg_car, ct_artifact')
     parser.add_argument('--scale', type=int, default=1, help='scale factor: 1, 2, 3, 4, 8') # 1 for dn and jpeg car
     parser.add_argument('--noise', type=int, default=15, help='noise level: 15, 25, 50')
     parser.add_argument('--jpeg', type=int, default=40, help='scale factor: 10, 20, 30, 40')
@@ -173,6 +173,13 @@ def define_model(args):
                     img_range=255., depths=[6, 6, 6, 6, 6, 6], embed_dim=180, num_heads=[6, 6, 6, 6, 6, 6],
                     mlp_ratio=2, upsampler='', resi_connection='1conv')
         param_key_g = 'params'
+
+    # 007 CT artifact reduction (grayscale, no upsampling)
+    elif args.task == 'ct_artifact':
+        model = net(upscale=1, in_chans=1, img_size=64, window_size=8,
+                    img_range=1., depths=[6, 6, 6, 6, 6, 6], embed_dim=180, num_heads=[6, 6, 6, 6, 6, 6],
+                    mlp_ratio=2, upsampler='', resi_connection='1conv')
+        param_key_g = 'params_ema'  # use EMA weights for GAN-trained model
     
     pretrained_model = torch.load(args.model_path)
     model.load_state_dict(pretrained_model[param_key_g] if param_key_g in pretrained_model.keys() else pretrained_model, strict=True)
@@ -210,6 +217,13 @@ def setup(args):
         folder = args.folder_gt
         border = 0
         window_size = 7
+
+    # 007 CT artifact reduction
+    elif args.task in ['ct_artifact']:
+        save_dir = f'results/swinir_{args.task}'
+        folder = args.folder_lq
+        border = 0
+        window_size = 8
 
     return folder, save_dir, border, window_size
 
@@ -249,6 +263,21 @@ def get_image_pair(args, path):
         img_lq = cv2.imdecode(encimg, 0)
         img_gt = np.expand_dims(img_gt, axis=2).astype(np.float32) / 255.
         img_lq = np.expand_dims(img_lq, axis=2).astype(np.float32) / 255.
+
+    # 007 CT artifact reduction (load lq image, optionally load gt for evaluation)
+    elif args.task in ['ct_artifact']:
+        img_lq = cv2.imread(path, cv2.IMREAD_GRAYSCALE).astype(np.float32) / 255.
+        img_lq = np.expand_dims(img_lq, axis=2)
+        # try to load gt image if folder_gt is provided
+        if args.folder_gt is not None:
+            gt_path = os.path.join(args.folder_gt, os.path.basename(path))
+            if os.path.exists(gt_path):
+                img_gt = cv2.imread(gt_path, cv2.IMREAD_GRAYSCALE).astype(np.float32) / 255.
+                img_gt = np.expand_dims(img_gt, axis=2)
+            else:
+                img_gt = None
+        else:
+            img_gt = None
 
     return imgname, img_lq, img_gt
 

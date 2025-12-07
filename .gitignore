@@ -23,6 +23,7 @@ share/python-wheels/
 MANIFEST
 
 images/
+test1/
 
 # Virtual environments
 .env
