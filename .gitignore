@@ -24,6 +24,7 @@ MANIFEST
 
 images/
 test1/
+dataset/
 
 # Virtual environments
 .env
