@@ -4,6 +4,7 @@ import glob
 import numpy as np
 from collections import OrderedDict
 import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 import torch
 import requests
 
@@ -16,8 +17,8 @@ def main():
     parser.add_argument('--task', type=str, default='color_dn', help='classical_sr, lightweight_sr, real_sr, '
                                                                      'gray_dn, color_dn, jpeg_car, ct_artifact')
     parser.add_argument('--scale', type=int, default=1, help='scale factor: 1, 2, 3, 4, 8') # 1 for dn and jpeg car
-    parser.add_argument('--noise', type=int, default=15, help='noise level: 15, 25, 50')
-    parser.add_argument('--jpeg', type=int, default=40, help='scale factor: 10, 20, 30, 40')
+    parser.add_argument('--noise', type=int, default=0, help='noise level: 15, 25, 50')
+    parser.add_argument('--jpeg', type=int, default=0, help='scale factor: 10, 20, 30, 40')
     parser.add_argument('--training_patch_size', type=int, default=128, help='patch size used in training SwinIR. '
                                        'Just used to differentiate two different settings in Table 2 of the paper. '
                                        'Images are NOT tested patch by patch.')
@@ -233,18 +234,29 @@ def get_image_pair(args, path):
 
     # 001 classical image sr/ 002 lightweight image sr (load lq-gt image pairs)
     if args.task in ['classical_sr', 'lightweight_sr']:
-        img_gt = cv2.imread(path, cv2.IMREAD_COLOR).astype(np.float32) / 255.
-        img_lq = cv2.imread(f'{args.folder_lq}/{imgname}x{args.scale}{imgext}', cv2.IMREAD_COLOR).astype(
-            np.float32) / 255.
+        img_gt_raw = cv2.imread(path, cv2.IMREAD_COLOR)
+        img_lq_raw = cv2.imread(f'{args.folder_lq}/{imgname}x{args.scale}{imgext}', cv2.IMREAD_COLOR)
+        if img_gt_raw is None:
+            raise FileNotFoundError(f"Cannot load ground truth image: {path}")
+        if img_lq_raw is None:
+            raise FileNotFoundError(f"Cannot load low quality image: {args.folder_lq}/{imgname}x{args.scale}{imgext}")
+        img_gt = img_gt_raw.astype(np.float32) / 255.
+        img_lq = img_lq_raw.astype(np.float32) / 255.
 
     # 003 real-world image sr (load lq image only)
     elif args.task in ['real_sr']:
         img_gt = None
-        img_lq = cv2.imread(path, cv2.IMREAD_COLOR).astype(np.float32) / 255.
+        img_lq_raw = cv2.imread(path, cv2.IMREAD_COLOR)
+        if img_lq_raw is None:
+            raise FileNotFoundError(f"Cannot load image: {path}")
+        img_lq = img_lq_raw.astype(np.float32) / 255.
 
     # 004 grayscale image denoising (load gt image and generate lq image on-the-fly)
     elif args.task in ['gray_dn']:
-        img_gt = cv2.imread(path, cv2.IMREAD_GRAYSCALE).astype(np.float32) / 255.
+        img_gt_raw = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+        if img_gt_raw is None:
+            raise FileNotFoundError(f"Cannot load grayscale image: {path}")
+        img_gt = img_gt_raw.astype(np.float32) / 255.
         np.random.seed(seed=0)
         img_lq = img_gt + np.random.normal(0, args.noise / 255., img_gt.shape)
         img_gt = np.expand_dims(img_gt, axis=2)
@@ -252,28 +264,42 @@ def get_image_pair(args, path):
 
     # 005 color image denoising (load gt image and generate lq image on-the-fly)
     elif args.task in ['color_dn']:
-        img_gt = cv2.imread(path, cv2.IMREAD_COLOR).astype(np.float32) / 255.
+        img_gt_raw = cv2.imread(path, cv2.IMREAD_COLOR)
+        if img_gt_raw is None:
+            raise FileNotFoundError(f"Cannot load color image: {path}")
+        img_gt = img_gt_raw.astype(np.float32) / 255.
         np.random.seed(seed=0)
         img_lq = img_gt + np.random.normal(0, args.noise / 255., img_gt.shape)
 
     # 006 JPEG compression artifact reduction (load gt image and generate lq image on-the-fly)
     elif args.task in ['jpeg_car']:
-        img_gt = cv2.imread(path, 0)
-        result, encimg = cv2.imencode('.jpg', img_gt, [int(cv2.IMWRITE_JPEG_QUALITY), args.jpeg])
-        img_lq = cv2.imdecode(encimg, 0)
-        img_gt = np.expand_dims(img_gt, axis=2).astype(np.float32) / 255.
-        img_lq = np.expand_dims(img_lq, axis=2).astype(np.float32) / 255.
+        img_gt_raw = cv2.imread(path, 0)
+        if img_gt_raw is None:
+            raise FileNotFoundError(f"Cannot load JPEG image: {path}")
+        result, encimg = cv2.imencode('.jpg', img_gt_raw, [int(cv2.IMWRITE_JPEG_QUALITY), args.jpeg])
+        img_lq_raw = cv2.imdecode(encimg, 0)
+        if img_lq_raw is None:
+            raise RuntimeError(f"Failed to decode JPEG image: {path}")
+        img_gt = np.expand_dims(img_gt_raw, axis=2).astype(np.float32) / 255.
+        img_lq = np.expand_dims(img_lq_raw, axis=2).astype(np.float32) / 255.
 
     # 007 CT artifact reduction (load lq image, optionally load gt for evaluation)
     elif args.task in ['ct_artifact']:
-        img_lq = cv2.imread(path, cv2.IMREAD_GRAYSCALE).astype(np.float32) / 255.
+        img_lq_raw = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+        if img_lq_raw is None:
+            raise FileNotFoundError(f"Cannot load CT image: {path}")
+        img_lq = img_lq_raw.astype(np.float32) / 255.
         img_lq = np.expand_dims(img_lq, axis=2)
         # try to load gt image if folder_gt is provided
         if args.folder_gt is not None:
             gt_path = os.path.join(args.folder_gt, os.path.basename(path))
             if os.path.exists(gt_path):
-                img_gt = cv2.imread(gt_path, cv2.IMREAD_GRAYSCALE).astype(np.float32) / 255.
-                img_gt = np.expand_dims(img_gt, axis=2)
+                img_gt_raw = cv2.imread(gt_path, cv2.IMREAD_GRAYSCALE)
+                if img_gt_raw is None:
+                    img_gt = None
+                else:
+                    img_gt = img_gt_raw.astype(np.float32) / 255.
+                    img_gt = np.expand_dims(img_gt, axis=2)
             else:
                 img_gt = None
         else:
