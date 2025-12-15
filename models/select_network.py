@@ -202,6 +202,24 @@ def define_G(opt):
                    resi_connection=opt_net['resi_connection'])
 
     # ----------------------------------------
+    # SwinIR-Strip (with horizontal strip attention)
+    # ----------------------------------------
+    elif net_type == 'swinir_strip':
+        from models.network_swinir_strip import SwinIRStrip as net
+        netG = net(upscale=opt_net['upscale'],
+                   in_chans=opt_net['in_chans'],
+                   img_size=opt_net['img_size'],
+                   window_size=opt_net['window_size'],
+                   strip_height=opt_net.get('strip_height', 1),  # 新增参数，默认为1
+                   img_range=opt_net['img_range'],
+                   depths=opt_net['depths'],
+                   embed_dim=opt_net['embed_dim'],
+                   num_heads=opt_net['num_heads'],
+                   mlp_ratio=opt_net['mlp_ratio'],
+                   upsampler=opt_net['upsampler'],
+                   resi_connection=opt_net['resi_connection'])
+
+    # ----------------------------------------
     # VRT
     # ----------------------------------------
     elif net_type == 'vrt':

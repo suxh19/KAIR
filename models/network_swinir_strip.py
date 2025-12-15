@@ -973,10 +973,17 @@ class SwinIRStrip(nn.Module):
 
     def check_image_size(self, x):
         _, _, h, w = x.size()
-        # Need to be divisible by both window_size and strip_height
-        mod_h = max(self.window_size, self.strip_height)
+        
+        # Calculate LCM of window_size and strip_height for Height padding to ensure divisibility by both
+        def lcm(a, b):
+            return abs(a * b) // math.gcd(a, b)
+            
+        mod_h = lcm(self.window_size, self.strip_height)
         mod_pad_h = (mod_h - h % mod_h) % mod_h
+        
+        # Width only needs to be divisible by window_size (Strip Attention handles full width defined at init)
         mod_pad_w = (self.window_size - w % self.window_size) % self.window_size
+        
         x = F.pad(x, (0, mod_pad_w, 0, mod_pad_h), 'reflect')
         return x
 
