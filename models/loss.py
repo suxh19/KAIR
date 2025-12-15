@@ -172,34 +172,82 @@ class GANLoss(nn.Module):
         loss = self.loss(input, target_label)
         return loss
 
+# --------------------------------------------
+# DirectionalGradientLoss
+# --------------------------------------------
+class DirectionalGradientLoss(nn.Module):
+    def __init__(self, weight_x=1.0, weight_y=1.0):
+        """
+        Args:
+            weight_x: 水平梯度 (检测纵向边缘) 的权重
+            weight_y: 垂直梯度 (检测横向边缘) 的权重
+        说明:
+            对于【横向条纹】，建议加大 weight_y，强迫网络恢复正确的垂直梯度。
+        """
+        super(DirectionalGradientLoss, self).__init__()
+        self.weight_x = weight_x
+        self.weight_y = weight_y
+        
+        # 定义 Sobel 算子
+        # Kernel X: 计算 dI/dx (检测垂直线条)
+        kernel_x = torch.tensor([[-1., 0., 1.], [-2., 0., 2.], [-1., 0., 1.]]).view(1, 1, 3, 3)
+        # Kernel Y: 计算 dI/dy (检测水平线条)
+        kernel_y = torch.tensor([[-1., -2., -1.], [0., 0., 0.], [1., 2., 1.]]).view(1, 1, 3, 3)
+        
+        # 注册为 buffer：不需要训练参数，且会自动随模型迁移到 GPU
+        self.register_buffer('kernel_x', kernel_x)
+        self.register_buffer('kernel_y', kernel_y)
+
+    def forward(self, pred, target):
+        # 自动适配输入通道数 (Batch, C, H, W)
+        b, c, h, w = pred.shape
+        
+        # 扩展 Kernel 以适配多通道输入 (Depthwise Convolution)
+        # 这样无论是单通道 CT 还是 3 通道都能跑
+        kernel_x: torch.Tensor = self.kernel_x  # type: ignore
+        kernel_y: torch.Tensor = self.kernel_y  # type: ignore
+        kx = kernel_x.expand(c, 1, 3, 3)
+        ky = kernel_y.expand(c, 1, 3, 3)
+
+        # 1. 计算预测图的梯度 (groups=c 保证各通道独立计算)
+        pred_gx = F.conv2d(pred, kx, padding=1, groups=c)
+        pred_gy = F.conv2d(pred, ky, padding=1, groups=c)
+        
+        # 2. 计算真值图的梯度
+        target_gx = F.conv2d(target, kx, padding=1, groups=c)
+        target_gy = F.conv2d(target, ky, padding=1, groups=c)
+        
+        # 3. 计算 L1 Loss (L1 比 MSE 对边缘更敏感且不模糊)
+        loss_x = F.l1_loss(torch.abs(pred_gx), torch.abs(target_gx))
+        loss_y = F.l1_loss(torch.abs(pred_gy), torch.abs(target_gy))
+        
+        return self.weight_x * loss_x + self.weight_y * loss_y
 
 # --------------------------------------------
-# TV loss
+# DirectionalTV loss
 # --------------------------------------------
-class TVLoss(nn.Module):
-    def __init__(self, tv_loss_weight=1):
+class DirectionalTVLoss(nn.Module):
+    def __init__(self, weight_h=1.0, weight_w=1.0):
         """
-        Total variation loss
-        https://github.com/jxgu1016/Total_Variation_Loss.pytorch
         Args:
-            tv_loss_weight (int):
+            weight_h: 惩罚垂直方向的差分 (Height wise) -> 用于消除【横向条纹】
+            weight_w: 惩罚水平方向的差分 (Width wise)  -> 用于消除【纵向条纹】
         """
-        super(TVLoss, self).__init__()
-        self.tv_loss_weight = tv_loss_weight
+        super(DirectionalTVLoss, self).__init__()
+        self.weight_h = weight_h
+        self.weight_w = weight_w
 
     def forward(self, x):
-        batch_size = x.size()[0]
-        h_x = x.size()[2]
-        w_x = x.size()[3]
-        count_h = self.tensor_size(x[:, :, 1:, :])
-        count_w = self.tensor_size(x[:, :, :, 1:])
-        h_tv = torch.pow((x[:, :, 1:, :] - x[:, :, :h_x - 1, :]), 2).sum()
-        w_tv = torch.pow((x[:, :, :, 1:] - x[:, :, :, :w_x - 1]), 2).sum()
-        return self.tv_loss_weight * 2 * (h_tv / count_h + w_tv / count_w) / batch_size
-
-    @staticmethod
-    def tensor_size(t):
-        return t.size()[1] * t.size()[2] * t.size()[3]
+        # 使用 L1 (abs) 代替 L2 (pow)，L1 去伪影更干净，不容易产生模糊
+        
+        # 计算垂直方向梯度 (对应横向条纹的边缘)
+        # 伪影在上下方向跳变剧烈，h_tv 会很大
+        h_tv = torch.abs(x[:, :, 1:, :] - x[:, :, :-1, :]).mean()
+        
+        # 计算水平方向梯度
+        w_tv = torch.abs(x[:, :, :, 1:] - x[:, :, :, :-1]).mean()
+        
+        return self.weight_h * h_tv + self.weight_w * w_tv
 
 
 # --------------------------------------------

@@ -30,12 +30,7 @@ from models.select_model import define_Model
 '''
 
 
-def augment_random_rotate(data, angle_range=(0, 360)):
-    angle = random.uniform(angle_range[0], angle_range[1])
-    for k, v in data.items():
-        if isinstance(v, torch.Tensor) and v.ndim == 4:
-            data[k] = TF.rotate(v, angle, interpolation=InterpolationMode.BILINEAR)
-    return data
+
 
 
 def main(json_path: str = 'options/train_msrresnet_gan.json') -> None:
@@ -188,28 +183,25 @@ def main(json_path: str = 'options/train_msrresnet_gan.json') -> None:
 
             current_step += 1
 
-            # -------------------------------
-            # 1) augmentation
-            # -------------------------------
-            train_data = augment_random_rotate(train_data)
+
 
             # -------------------------------
-            # 2) feed patch pairs
+            # 1) feed patch pairs
             # -------------------------------
             model.feed_data(train_data)
 
             # -------------------------------
-            # 3) optimize parameters
+            # 2) optimize parameters
             # -------------------------------
             model.optimize_parameters(current_step)
 
             # -------------------------------
-            # 4) update learning rate
+            # 3) update learning rate
             # -------------------------------
             model.update_learning_rate(current_step)
 
             # -------------------------------
-            # 5) training information
+            # 4) training information
             # -------------------------------
             if current_step % opt_dict.get('train', {}).get('checkpoint_print', 200) == 0 and opt_dict.get('rank', 0) == 0:
                 logs = model.current_log()  # such as loss
@@ -219,14 +211,14 @@ def main(json_path: str = 'options/train_msrresnet_gan.json') -> None:
                 logger.info(message)
 
             # -------------------------------
-            # 6) save model
+            # 5) save model
             # -------------------------------
             if current_step % opt_dict.get('train', {}).get('checkpoint_save', 5000) == 0 and opt_dict.get('rank', 0) == 0:
                 logger.info('Saving the model.')
                 model.save(current_step)
 
             # -------------------------------
-            # 7) testing
+            # 6) testing
             # -------------------------------
             if current_step % opt_dict.get('train', {}).get('checkpoint_test', 5000) == 0 and opt_dict.get('rank', 0) == 0:
 

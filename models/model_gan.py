@@ -6,7 +6,7 @@ from torch.optim import Adam
 
 from models.select_network import define_G, define_D
 from models.model_base import ModelBase
-from models.loss import GANLoss, PerceptualLoss
+from models.loss import GANLoss, PerceptualLoss, DirectionalGradientLoss, DirectionalTVLoss
 from models.loss_ssim import SSIMLoss
 
 
@@ -147,6 +147,32 @@ class ModelGAN(ModelBase):
         self.D_update_ratio = self.opt_train['D_update_ratio'] if self.opt_train['D_update_ratio'] else 1
         self.D_init_iters = self.opt_train['D_init_iters'] if self.opt_train['D_init_iters'] else 0
 
+        # ------------------------------------
+        # 4) Directional Gradient Loss (监督损失，需要 GT)
+        # ------------------------------------
+        self.Grad_lossfn_weight = self.opt_train.get('Grad_lossfn_weight', 0)
+        if self.Grad_lossfn_weight > 0:
+            grad_weight_x = self.opt_train.get('Grad_weight_x', 1.0)
+            grad_weight_y = self.opt_train.get('Grad_weight_y', 1.0)
+            self.Grad_lossfn = DirectionalGradientLoss(weight_x=grad_weight_x, weight_y=grad_weight_y).to(self.device)
+            print(f'Using DirectionalGradientLoss with weight_x={grad_weight_x}, weight_y={grad_weight_y}')
+        else:
+            print('Do not use directional gradient loss.')
+            self.Grad_lossfn = None
+
+        # ------------------------------------
+        # 5) Directional TV Loss (正则化损失，不需要 GT)
+        # ------------------------------------
+        self.TV_lossfn_weight = self.opt_train.get('TV_lossfn_weight', 0)
+        if self.TV_lossfn_weight > 0:
+            tv_weight_h = self.opt_train.get('TV_weight_h', 1.0)
+            tv_weight_w = self.opt_train.get('TV_weight_w', 1.0)
+            self.TV_lossfn = DirectionalTVLoss(weight_h=tv_weight_h, weight_w=tv_weight_w).to(self.device)
+            print(f'Using DirectionalTVLoss with weight_h={tv_weight_h}, weight_w={tv_weight_w}')
+        else:
+            print('Do not use directional TV loss.')
+            self.TV_lossfn = None
+
     # ----------------------------------------
     # define optimizer, G and D
     # ----------------------------------------
@@ -216,6 +242,12 @@ class ModelGAN(ModelBase):
             if self.opt_train['F_lossfn_weight'] > 0 and self.F_lossfn is not None:
                 F_loss = self.F_lossfn_weight * self.F_lossfn(self.E, self.H)
                 loss_G_total += F_loss                 # 2) VGG feature loss
+            if self.Grad_lossfn_weight > 0 and self.Grad_lossfn is not None:
+                Grad_loss = self.Grad_lossfn_weight * self.Grad_lossfn(self.E, self.H)
+                loss_G_total += Grad_loss              # 4) Directional Gradient loss
+            if self.TV_lossfn_weight > 0 and self.TV_lossfn is not None:
+                TV_loss = self.TV_lossfn_weight * self.TV_lossfn(self.E)
+                loss_G_total += TV_loss                # 5) Directional TV loss
 
             if self.opt['train']['gan_type'] in ['gan', 'lsgan', 'wgan', 'softplusgan']:
                 pred_g_fake = self.netD(self.E)
@@ -275,6 +307,10 @@ class ModelGAN(ModelBase):
                 self.log_dict['G_loss'] = G_loss.item()
             if self.opt_train['F_lossfn_weight'] > 0:
                 self.log_dict['F_loss'] = F_loss.item()
+            if self.Grad_lossfn_weight > 0:
+                self.log_dict['Grad_loss'] = Grad_loss.item()
+            if self.TV_lossfn_weight > 0:
+                self.log_dict['TV_loss'] = TV_loss.item()
             self.log_dict['D_loss'] = D_loss.item()
 
         #self.log_dict['l_d_real'] = l_d_real.item()
