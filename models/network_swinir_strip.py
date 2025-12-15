@@ -307,6 +307,7 @@ class StripTransformerBlock(nn.Module):
         window_size (int): Window size for local attention.
         strip_height (int): Strip height for horizontal attention.
         shift_size (int): Shift size for SW-MSA.
+        strip_shift_size (int): Shift size for Shifted-Strip-MSA (vertical direction).
         mlp_ratio (float): Ratio of mlp hidden dim to embedding dim.
         qkv_bias (bool, optional): If True, add a learnable bias to query, key, value. Default: True
         qk_scale (float | None, optional): Override default qk scale of head_dim ** -0.5 if set.
@@ -318,8 +319,8 @@ class StripTransformerBlock(nn.Module):
     """
 
     def __init__(self, dim, input_resolution, num_heads, window_size=7, strip_height=1, shift_size=0,
-                 mlp_ratio=4., qkv_bias=True, qk_scale=None, drop=0., attn_drop=0., drop_path=0.,
-                 act_layer=nn.GELU, norm_layer=nn.LayerNorm):
+                 strip_shift_size=0, mlp_ratio=4., qkv_bias=True, qk_scale=None, drop=0., attn_drop=0.,
+                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm):
         super().__init__()
         self.dim = dim
         self.input_resolution = input_resolution
@@ -327,6 +328,7 @@ class StripTransformerBlock(nn.Module):
         self.window_size = window_size
         self.strip_height = strip_height
         self.shift_size = shift_size
+        self.strip_shift_size = strip_shift_size
         self.mlp_ratio = mlp_ratio
         
         # Split channels: half for window attention, half for strip attention
@@ -346,6 +348,10 @@ class StripTransformerBlock(nn.Module):
         # Adjust strip height if necessary
         if H <= self.strip_height:
             self.strip_height = H
+            self.strip_shift_size = 0
+        if self.strip_shift_size > 0:
+            assert 0 < self.strip_shift_size < self.strip_height, \
+                f"strip_shift_size must be in (0, strip_height), got {self.strip_shift_size}"
 
         self.norm1 = norm_layer(dim)
         
@@ -371,6 +377,13 @@ class StripTransformerBlock(nn.Module):
             attn_mask = None
         self.register_buffer("attn_mask", attn_mask)
 
+        # Calculate attention masks for shifted strip attention
+        if self.strip_shift_size > 0:
+            strip_attn_mask = self.calculate_strip_mask(self.input_resolution)
+        else:
+            strip_attn_mask = None
+        self.register_buffer("strip_attn_mask", strip_attn_mask)
+
     def calculate_window_mask(self, x_size):
         """Calculate attention mask for SW-MSA."""
         H, W = x_size
@@ -390,8 +403,34 @@ class StripTransformerBlock(nn.Module):
         mask_windows = window_partition(img_mask, self.window_size)
         mask_windows = mask_windows.view(-1, self.window_size * self.window_size)
         attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
-        attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(attn_mask == 0, float(0.0))
+        attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0))
+        attn_mask = attn_mask.masked_fill(attn_mask == 0, float(0.0))
+        return attn_mask
 
+    def calculate_strip_mask(self, x_size):
+        """Calculate attention mask for Shifted-Strip-MSA."""
+        H, W = x_size
+        img_mask = torch.zeros((1, H, W, 1))
+        
+        # Define vertical slices for shifted strip partitioning
+        h_slices = (
+            slice(0, -self.strip_height),
+            slice(-self.strip_height, -self.strip_shift_size),
+            slice(-self.strip_shift_size, None)
+        )
+        
+        cnt = 0
+        for h in h_slices:
+            img_mask[:, h, :, :] = cnt
+            cnt += 1
+        
+        # Partition into strips
+        mask_strips = horizontal_strip_partition(img_mask, self.strip_height)
+        mask_strips = mask_strips.view(-1, self.strip_height * W)
+        attn_mask = mask_strips.unsqueeze(1) - mask_strips.unsqueeze(2)
+        attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0))
+        attn_mask = attn_mask.masked_fill(attn_mask == 0, float(0.0))
+        
         return attn_mask
 
     def forward(self, x, x_size):
@@ -434,16 +473,35 @@ class StripTransformerBlock(nn.Module):
             x_window_out = shifted_x_window
 
         # ========== Horizontal Strip Attention Branch ==========
+        # Cyclic shift for strip attention (vertical direction only)
+        if self.strip_shift_size > 0:
+            shifted_x_strip = torch.roll(x_strip, shifts=-self.strip_shift_size, dims=1)
+        else:
+            shifted_x_strip = x_strip
+
         # Partition into horizontal strips
-        x_strips = horizontal_strip_partition(x_strip, self.strip_height)
+        x_strips = horizontal_strip_partition(shifted_x_strip, self.strip_height)
         x_strips = x_strips.view(-1, self.strip_height * W, self.dim_strip)
 
-        # Horizontal strip attention (no shift for simplicity)
-        attn_strips = self.attn_strip(x_strips, mask=None)
+        # Shifted-Strip-MSA with mask
+        if self.strip_shift_size > 0:
+            if self.input_resolution == x_size:
+                strip_mask = self.strip_attn_mask
+            else:
+                strip_mask = self.calculate_strip_mask(x_size).to(x.device)
+            attn_strips = self.attn_strip(x_strips, mask=strip_mask)
+        else:
+            attn_strips = self.attn_strip(x_strips, mask=None)
 
         # Reverse partition
         attn_strips = attn_strips.view(-1, self.strip_height, W, self.dim_strip)
-        x_strip_out = horizontal_strip_reverse(attn_strips, self.strip_height, H, W)
+        shifted_x_strip = horizontal_strip_reverse(attn_strips, self.strip_height, H, W)
+
+        # Reverse cyclic shift
+        if self.strip_shift_size > 0:
+            x_strip_out = torch.roll(shifted_x_strip, shifts=self.strip_shift_size, dims=1)
+        else:
+            x_strip_out = shifted_x_strip
 
         # ========== Concatenate and Continue ==========
         x = torch.cat([x_window_out, x_strip_out], dim=-1)  # B, H, W, C
@@ -564,6 +622,7 @@ class StripBasicLayer(nn.Module):
                                  num_heads=num_heads, window_size=window_size,
                                  strip_height=strip_height,
                                  shift_size=0 if (i % 2 == 0) else window_size // 2,
+                                 strip_shift_size=0 if (i % 2 == 0) else strip_height // 2,
                                  mlp_ratio=mlp_ratio,
                                  qkv_bias=qkv_bias, qk_scale=qk_scale,
                                  drop=drop, attn_drop=attn_drop,

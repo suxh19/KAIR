@@ -2,15 +2,13 @@
   "task": "swinir_sr_realworld_x4_gan",
   "model": "gan",
   "gpu_ids": [
-    0,
     1,
-    2,
     3
   ],
   "scale": 1,
   "n_channels": 1,
   "path": {
-    "root": "ct_artifact",
+    "root": "ct_artifact1",
     "pretrained_netG": null,
     "pretrained_netD": null,
     "pretrained_netE": null
@@ -19,18 +17,18 @@
     "train": {
       "name": "train_dataset",
       "dataset_type": "plain",
-      "dataroot_H": "/public/home/emms_mfy_sxh/dataset/CT_Artifact/train/H",
-      "dataroot_L": "/public/home/emms_mfy_sxh/dataset/CT_Artifact/train/L",
+      "dataroot_H": "/home/suxh/mount/dataset/CT_Artifact/train/H",
+      "dataroot_L": "/home/suxh/mount/dataset/CT_Artifact/train/L",
       "H_size": 128,
       "dataloader_shuffle": true,
       "dataloader_num_workers": 8,
-      "dataloader_batch_size": 8
+      "dataloader_batch_size": 4
     },
     "test": {
       "name": "test_dataset",
       "dataset_type": "plain",
-      "dataroot_H": "/public/home/emms_mfy_sxh/dataset/CT_Artifact/test/H",
-      "dataroot_L": "/public/home/emms_mfy_sxh/dataset/CT_Artifact/test/L",
+      "dataroot_H": "/home/suxh/mount/dataset/CT_Artifact/test/H",
+      "dataroot_L": "/home/suxh/mount/dataset/CT_Artifact/test/L",
       "H_size": 128
     }
   },
@@ -41,7 +39,7 @@
     "img_size": 128,
     "window_size": 8,
     "img_range": 1.0,
-    "strip_height": 3,
+    "strip_height": 2,
     "depths": [
       6,
       6,
@@ -77,8 +75,9 @@
     "init_gain": 0.2
   },
   "train": {
-    "G_lossfn_type": "charbonnier",
+    "G_lossfn_type": "l1",
     "G_lossfn_weight": 1,
+    "F_lossfn_weight": 0,
     "gan_type": "gan",
     "Grad_lossfn_weight": 0.1,
     "Grad_weight_x": 1.0,

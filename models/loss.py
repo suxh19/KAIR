@@ -83,6 +83,10 @@ class VGGFeatureExtractor(nn.Module):
             v.requires_grad = False
 
     def forward(self, x):
+        # 自动将单通道灰度图扩展为3通道，以兼容 VGG19
+        if x.shape[1] == 1:
+            x = x.repeat(1, 3, 1, 1)
+        
         if self.use_range_norm:
             x = (x + 1.0) / 2.0
         if self.use_input_norm:
