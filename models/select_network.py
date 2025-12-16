@@ -202,7 +202,7 @@ def define_G(opt):
                    resi_connection=opt_net['resi_connection'])
 
     # ----------------------------------------
-    # SwinIR-Strip (with horizontal strip attention)
+    # SwinIR-Strip (with vertical strip attention)
     # ----------------------------------------
     elif net_type == 'swinir_strip':
         from models.network_swinir_strip import SwinIRStrip as net
@@ -210,7 +210,7 @@ def define_G(opt):
                    in_chans=opt_net['in_chans'],
                    img_size=opt_net['img_size'],
                    window_size=opt_net['window_size'],
-                   strip_height=opt_net.get('strip_height', 1),  # 新增参数，默认为1
+                   strip_width=opt_net.get('strip_width', 1),  # 垂直条带宽度，默认为1
                    img_range=opt_net['img_range'],
                    depths=opt_net['depths'],
                    embed_dim=opt_net['embed_dim'],
