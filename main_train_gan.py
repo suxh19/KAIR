@@ -4,7 +4,7 @@ import argparse
 import random
 import numpy as np
 import logging
-from typing import Dict, Any, Union
+from typing import Dict, Any, Union, Optional
 from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 import torch
@@ -14,6 +14,7 @@ from torchvision.transforms import InterpolationMode
 from utils import utils_logger
 from utils import utils_image as util
 from utils import utils_option as option
+from utils.utils_plot_curve import TrainingCurvePlotter
 from utils.utils_dist import get_dist_info, init_dist
 
 from data.select_dataset import define_Dataset
@@ -169,6 +170,15 @@ def main(json_path: str = 'options/train_msrresnet_gan.json') -> None:
         logger.info(model.info_network())
         # logger.info(model.info_params())  # 注释掉冗长的参数打印
 
+    # 初始化训练曲线绘图器
+    curve_plotter: Optional[TrainingCurvePlotter] = None
+    if opt_dict.get('rank', 0) == 0:
+        curve_plotter = TrainingCurvePlotter(
+            save_dir=opt_dict.get('path', {}).get('log', ''),
+            width=1200,
+            height=800
+        )
+
     '''
     # ----------------------------------------
     # Step--4 (main training)
@@ -209,6 +219,10 @@ def main(json_path: str = 'options/train_msrresnet_gan.json') -> None:
                 for k, v in logs.items():  # merge log information into message
                     message += '{:s}: {:.3e} '.format(k, v)
                 logger.info(message)
+
+                # 记录训练数据到曲线绘图器
+                if curve_plotter is not None:
+                    curve_plotter.add_training_data(current_step, logs)
 
             # -------------------------------
             # 5) save model
@@ -257,8 +271,17 @@ def main(json_path: str = 'options/train_msrresnet_gan.json') -> None:
 
                 avg_psnr = avg_psnr / idx
 
+                # 记录测试PSNR到曲线绘图器
+                if curve_plotter is not None:
+                    curve_plotter.add_test_data(current_step, avg_psnr)
+
                 # testing log
                 logger.info('<epoch:{:3d}, iter:{:8,d}, Average PSNR : {:<.2f}dB\n'.format(epoch, current_step, avg_psnr))
+
+                # 保存训练曲线（与 checkpoint_test 同步）
+                if curve_plotter is not None:
+                    curve_plotter.save_curves(current_step)
+                    logger.info('Saved training curves.')
 
 if __name__ == '__main__':
     main()
