@@ -424,6 +424,16 @@ class StripTransformerBlock(nn.Module):
         if self.strip_shift_size > 0:
             assert 0 < self.strip_shift_size < self.strip_width, \
                 f"strip_shift_size must be in (0, strip_width), got {self.strip_shift_size}"
+        
+        # Info message for strip_width=1
+        if self.strip_width == 1:
+            import warnings
+            warnings.warn(
+                f"strip_width=1: Pure vertical attention with no horizontal context in strips. "
+                f"This is suitable for strong vertical artifacts (e.g., limited-angle CT). "
+                f"Consider strip_width >= 2 if you need some horizontal context.",
+                UserWarning
+            )
 
         self.norm1 = norm_layer(dim)
         
